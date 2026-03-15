@@ -77,7 +77,7 @@ AskUserQuestion:
   header: "年报PDF"
   options:
     - label: "没有，自动下载（推荐）"
-      description: "Phase 0 自动从雪球/同花顺搜索并下载最新年报PDF"
+      description: "Phase 0 默认获取最近5年年报；若最近一年年报未披露则用本年季报/半年报补齐；本地已有的不重复下载"
     - label: "没有，跳过"
       description: "仅使用 Tushare + WebSearch 数据分析，部分模块将使用降级方案（~85%精度）"
     - label: "稍后上传"
@@ -141,7 +141,10 @@ AskUserQuestion:
 │  跳过条件：                                       │
 │     用户已上传 PDF / 选择了"跳过" / "稍后上传"     │
 │                                                   │
-│  输出：annual_report.pdf（或下载失败 Warning）     │
+│  默认策略：最近 5 年年报；若最近一年年报未披露     │
+│          则用本年披露的季报/半年报补齐             │
+│  去重：output/{code}_{company}/ 已有的 PDF 不重复下载│
+│  输出：output/{code}_{company}/*.pdf（或下载失败 Warning）│
 └──────────┬──────────────────────────────────────┘
            │
            ▼

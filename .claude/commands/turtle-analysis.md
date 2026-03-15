@@ -10,8 +10,12 @@ Run a full Turtle Investment Framework (龟龟投资策略) analysis on stock: $
 Read prompts/coordinator.md for the full pipeline specification, then execute each phase:
 
 ### Phase 0: PDF Acquisition (conditional)
-- Check if annual report PDF already exists in output/{code}_{company}/
-- If not found, use /download-report command (scripts/download_report.py) to search and download
+- Default: use the last 5 years annual reports (年报)
+- If the most recent annual report is not available yet:
+  - A-share: use current-year Q1/Interim/Q3 reports as substitutes
+  - HK: use current-year interim report as substitute
+- Skip downloads that already exist under output/{code}_{company}/
+- If missing, use /download-report command (scripts/download_report.py) to search and download
 - If download fails, proceed without PDF (graceful degradation)
 
 ### Phase 1A: Tushare Data Collection (Python script)
