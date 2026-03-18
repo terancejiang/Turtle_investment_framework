@@ -275,6 +275,39 @@ class TestMain:
             ])
         assert exc_info.value.code == EXIT_BAD_ARGUMENTS
 
+    def test_missing_url_requires_xueqiu_args(self):
+        with pytest.raises(SystemExit) as exc_info:
+            main([
+                "--stock-code", "SH600887",
+                "--report-type", "年报",
+                "--year", "2024",
+            ])
+        assert exc_info.value.code == EXIT_BAD_ARGUMENTS
+
+    @patch("download_report.download_annual_report")
+    @patch("download_report.validate_url", return_value=(True, ""))
+    @patch(
+        "download_report.resolve_pdf_url_from_xueqiu_timeline",
+        return_value=(True, "https://stockn.xueqiu.com/test.pdf", "OK"),
+    )
+    def test_xueqiu_resolve_flow(self, mock_resolve, mock_validate, mock_download):
+        mock_download.return_value = (True, "OK", 50000)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(SystemExit) as exc_info:
+                main([
+                    "--stock-code", "00700",
+                    "--report-type", "年报",
+                    "--year", "2024",
+                    "--save-dir", tmpdir,
+                    "--xueqiu-timeline-url",
+                    "https://xueqiu.com/statuses/stock_timeline.json?symbol_id=00700",
+                    "--cookie",
+                    "xq_a_token=a; xq_r_token=b",
+                ])
+            assert exc_info.value.code == EXIT_SUCCESS
+        mock_resolve.assert_called_once()
+        assert mock_download.call_args[1]["url"] == "https://stockn.xueqiu.com/test.pdf"
+
     @patch("download_report.download_annual_report")
     @patch("download_report.validate_url", return_value=(True, ""))
     def test_network_failure_exit_code(self, mock_validate, mock_download):

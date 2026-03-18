@@ -52,6 +52,13 @@ Use the **WebSearch** tool to find the PDF.
    - Can also try with company name if known, e.g.: `site:notice.10jqka.com.cn 伊利股份 2024 年度报告`
 2. If still no results, retry **without** any `site:` prefix as a last resort.
 
+### If WebSearch is blocked or returns nothing (Xueqiu anti-bot):
+Ask the user for:
+- A **signed Xueqiu timeline URL** copied from browser devtools (usually `https://xueqiu.com/statuses/stock_timeline.json?...&md5__1038=...`)
+- The user's **Cookie** (at least `xq_a_token` and `xq_r_token`)
+
+Then skip WebSearch and let the downloader crawl + resolve the PDF URL directly.
+
 ## Step 2: Extract PDF Links
 
 From the search results, filter URLs that match PDF links from supported sources:
@@ -88,8 +95,48 @@ python3 scripts/download_report.py \
   --stock-code "<formatted_stock_code>" \
   --report-type "<report_type>" \
   --year "<year>" \
-  --save-dir "."
+  --save-dir "output"
 ```
+
+### Alternative: Crawl PDF link from Xueqiu timeline and download (cookie required)
+If you have a signed timeline URL and cookie, you can download without passing `--url`:
+
+```bash
+python3 scripts/download_report.py \
+  --xueqiu-timeline-url "<TIMELINE_URL>" \
+  --cookie "<COOKIE>" \
+  --stock-code "<formatted_stock_code>" \
+  --report-type "<report_type>" \
+  --year "<year>" \
+  --save-dir "output" \
+  --xueqiu-max-pages 50 \
+  --xueqiu-count 50
+```
+
+### Alternative: Use Playwright to crawl + resolve + download (recommended when WAF blocks paging)
+If requests-based crawling is blocked by anti-bot or `md5__1038` signature constraints, use Playwright mode:
+
+```bash
+python3 scripts/download_report.py \
+  --xueqiu-use-playwright \
+  --cookie "<COOKIE>" \
+  --stock-code "<formatted_stock_code>" \
+  --report-type "<report_type>" \
+  --year "<year>" \
+  --save-dir "output" \
+  --xueqiu-max-pages 200
+```
+
+### Output path convention
+Downloaded PDF is saved under:
+- `output/<code>_<company>/<code>_<year>_<report_type>.pdf`
+Where `<code>` strips `SH`/`SZ`/`HK` prefix and `<company>` comes from `--company-name` (optional).
+
+## Example: Poly Property Services (06049) last 5 annual reports
+When requests-based paging is blocked, the working approach is:
+1. Use Playwright crawling to collect announcement pages (auto-signature by Xueqiu JS).
+2. Filter candidates by `年度报告/年报` + year.
+3. Download the chosen `stockn.xueqiu.com/*.pdf` link via `download_report.py`.
 
 ### Parse the output
 

@@ -16,6 +16,7 @@ Target sections:
 Usage:
     python3 scripts/pdf_preprocessor.py --pdf report.pdf
     python3 scripts/pdf_preprocessor.py --pdf report.pdf --output output/sections.json
+    python3 scripts/pdf_preprocessor.py --pdf report.pdf --market HK --verbose
     python3 scripts/pdf_preprocessor.py --pdf report.pdf --verbose --dry-run
 """
 
@@ -120,7 +121,7 @@ SECTION_KEYWORDS: Dict[str, List[str]] = {
         "董事會報告",
     ],
     "SUB": [
-        # 高特异性 — 主匹配
+        # 高特异性 ── 主匹配
         "主要控股参股公司分析",
         "主要子公司及对公司净利润的影响",
         "主要控股参股公司情况",
@@ -130,7 +131,6 @@ SECTION_KEYWORDS: Dict[str, List[str]] = {
         "在其他主体中的权益",
         "纳入合并范围的主体",
         "合并范围的变化",
-        # 删除: "长期股权投资" (歧义太大，匹配到 Note #17)
         # 新增: 更具体的变体
         "长期股权投资——对子公司",
         "长期股权投资——联营企业",
@@ -139,6 +139,91 @@ SECTION_KEYWORDS: Dict[str, List[str]] = {
         "在子公司中的權益",
         "在其他主體中的權益",
         "長期股權投資——對子公司",
+    ],
+}
+
+# ---------------------------------------------------------------------------
+# HK Market (HKFRS) keyword dictionaries ── Plan A adaptation
+# ---------------------------------------------------------------------------
+
+SECTION_KEYWORDS_HK: Dict[str, List[str]] = {
+    "P2": [
+        # HK HKFRS ── restricted cash / pledged deposits
+        "受限制銀行存款",
+        "已抵押銀行存款",
+        "受限制存款",
+        "已質押存款",
+        "受限制現金",
+        "已抵押的銀行存款",
+        "使用受限制的銀行結餘",
+        # Fallback: broader terms
+        "受限制的資產",
+        "使用權受限資產",
+    ],
+    "P3": [
+        # HK ── AR aging
+        "應收賬款賬齡",
+        "應收賬款的賬齡",
+        "賬齡分析",
+        "應收貿易賬款賬齡",
+        "應收貿易賬款的賬齡",
+        "貿易應收款項的賬齡",
+        "貿易應收款項賬齡",
+        "按賬齡分析",
+    ],
+    "P4": [
+        # HK uses 關連 (connected transactions), NOT 關聯
+        "關連交易",
+        "關連人士交易",
+        "持續關連交易",
+        "須予披露的關連交易",
+        "關連人士",
+        # Fallback: some HK reports still use 關聯
+        "關聯方交易",
+        "關聯交易",
+    ],
+    "P6": [
+        # HK ── contingent liabilities
+        "或然負債",
+        "或然負債及承擔",
+        "資本承擔",
+        "經營租賃承擔",
+        "承擔及或然負債",
+        # Broader
+        "承擔",
+        "或有事項",
+    ],
+    "P13": [
+        # HK has NO "非經常性損益" concept; use equivalent disclosure items
+        "其他收入及其他收益及虧損淨額",
+        "其他收入及其他收益及虧損",
+        "其他收入及收益",
+        "其他收益及虧損",
+        "其他淨收入",
+        "其他收入淨額",
+        # Some HK reports may still have this (dual-listed)
+        "非經常性損益",
+    ],
+    "MDA": [
+        # HK ── Management Discussion & Analysis
+        "管理層討論及分析",
+        "管理層討論與分析",
+        "業務回顧",
+        "營運回顧",
+        "主席報告",
+        "行政總裁報告",
+        "董事會報告",
+    ],
+    "SUB": [
+        # HK ── subsidiaries
+        "主要附屬公司的詳情",
+        "主要附屬公司",
+        "附屬公司的詳情",
+        "於附屬公司的權益",
+        "在附屬公司的權益",
+        "於附屬公司之權益",
+        "附屬公司名單",
+        "附屬公司列表",
     ],
 }
 
@@ -168,6 +253,35 @@ ZONE_MARKERS: List[Tuple[str, str]] = [
     (r"[一二三四五六七八九十]+[、.．]\s*补充资料", "SUPPLEMENT_ZONE"),
 ]
 
+# ---------------------------------------------------------------------------
+# Zone detection markers for HK (HKFRS) annual reports
+# ---------------------------------------------------------------------------
+
+ZONE_MARKERS_HK: List[Tuple[str, str]] = [
+    # Corporate Governance / 企業管治
+    (r"企業管治報告", "GOVERNANCE_ZONE"),
+    (r"企業管治", "GOVERNANCE_ZONE"),
+    # Directors' Report / 董事會報告
+    (r"董事會報告", "DIRECTORS_ZONE"),
+    # MDA / 管理層討論
+    (r"管理層討論及分析", "MDA_ZONE"),
+    (r"管理層討論與分析", "MDA_ZONE"),
+    (r"業務回顧", "MDA_ZONE"),
+    (r"營運回顧", "MDA_ZONE"),
+    # Financial Statements / 綜合財務報表
+    (r"綜合損益表", "FIN_ZONE"),
+    (r"綜合財務狀況表", "FIN_ZONE"),
+    (r"綜合全面收益表", "FIN_ZONE"),
+    # Accounting Policies / 重要會計政策
+    (r"重要會計政策", "POLICY_ZONE"),
+    (r"主要會計政策", "POLICY_ZONE"),
+    # Notes / 綜合財務報表附註
+    (r"綜合財務報表附註", "NOTES_ZONE"),
+    (r"財務報表附註", "NOTES_ZONE"),
+    # Five Year Financial Summary / 五年財務摘要
+    (r"五年財務摘要", "SUPPLEMENT_ZONE"),
+]
+
 SECTION_ZONE_PREFERENCES: Dict[str, Dict[str, List[str]]] = {
     "P2":  {"prefer": ["NOTES_ZONE"], "avoid": ["POLICY_ZONE"]},
     "P3":  {"prefer": ["NOTES_ZONE"], "avoid": ["POLICY_ZONE"]},
@@ -176,6 +290,16 @@ SECTION_ZONE_PREFERENCES: Dict[str, Dict[str, List[str]]] = {
     "P13": {"prefer": ["SUPPLEMENT_ZONE", "NOTES_ZONE"], "avoid": ["POLICY_ZONE"]},
     "MDA": {"prefer": ["MDA_ZONE"], "avoid": ["NOTES_ZONE", "FIN_ZONE", "POLICY_ZONE", "SUPPLEMENT_ZONE"]},
     "SUB": {"prefer": ["NOTES_ZONE"], "avoid": ["POLICY_ZONE"]},
+}
+
+SECTION_ZONE_PREFERENCES_HK: Dict[str, Dict[str, List[str]]] = {
+    "P2":  {"prefer": ["NOTES_ZONE"], "avoid": ["POLICY_ZONE", "MDA_ZONE"]},
+    "P3":  {"prefer": ["NOTES_ZONE"], "avoid": ["POLICY_ZONE", "MDA_ZONE"]},
+    "P4":  {"prefer": ["DIRECTORS_ZONE", "NOTES_ZONE"], "avoid": ["POLICY_ZONE"]},
+    "P6":  {"prefer": ["NOTES_ZONE"], "avoid": ["POLICY_ZONE", "GOVERNANCE_ZONE"]},
+    "P13": {"prefer": ["NOTES_ZONE"], "avoid": ["POLICY_ZONE", "MDA_ZONE"]},
+    "MDA": {"prefer": ["MDA_ZONE"], "avoid": ["NOTES_ZONE", "FIN_ZONE", "POLICY_ZONE"]},
+    "SUB": {"prefer": ["NOTES_ZONE"], "avoid": ["POLICY_ZONE", "MDA_ZONE"]},
 }
 
 
@@ -189,16 +313,15 @@ def is_garbled(text: str, threshold: float = 0.30) -> bool:
     """Detect garbled text: >threshold fraction of non-CJK/ASCII/common-punct chars."""
     if not text:
         return True
-    # Characters we consider "normal" in a Chinese annual report
     normal = 0
     for ch in text:
         cp = ord(ch)
         if (
-            0x20 <= cp <= 0x7E  # ASCII printable
-            or 0x4E00 <= cp <= 0x9FFF  # CJK Unified Ideographs
-            or 0x3400 <= cp <= 0x4DBF  # CJK Extension A
-            or 0x3000 <= cp <= 0x303F  # CJK Punctuation
-            or 0xFF00 <= cp <= 0xFFEF  # Fullwidth Forms
+            0x20 <= cp <= 0x7E
+            or 0x4E00 <= cp <= 0x9FFF
+            or 0x3400 <= cp <= 0x4DBF
+            or 0x3000 <= cp <= 0x303F
+            or 0xFF00 <= cp <= 0xFFEF
             or ch in "\n\r\t"
         ):
             normal += 1
@@ -212,19 +335,16 @@ def _tables_to_markdown(tables: list) -> str:
     for table in tables:
         if not table or len(table) < 2:
             continue
-        # Clean cells
         cleaned = []
         for row in table:
             cleaned.append([
                 (cell or "").replace("\n", " ").strip()
                 for cell in row
             ])
-        # Build markdown table
         header = cleaned[0]
         md = "| " + " | ".join(header) + " |\n"
         md += "| " + " | ".join(["---"] * len(header)) + " |\n"
         for row in cleaned[1:]:
-            # Pad row if shorter than header
             while len(row) < len(header):
                 row.append("")
             md += "| " + " | ".join(row[:len(header)]) + " |\n"
@@ -233,21 +353,7 @@ def _tables_to_markdown(tables: list) -> str:
 
 
 def extract_all_pages(pdf_path: str, verbose: bool = False) -> List[Tuple[int, str]]:
-    """Extract text from all pages of a PDF using pdfplumber.
-
-    Falls back to PyMuPDF if pdfplumber produces garbled text.
-
-    Args:
-        pdf_path: Path to the PDF file.
-        verbose: Print progress messages.
-
-    Returns:
-        List of (page_number_1indexed, text) tuples.
-
-    Raises:
-        FileNotFoundError: If the PDF file doesn't exist.
-        RuntimeError: If the PDF cannot be opened or is encrypted.
-    """
+    """Extract text from all pages of a PDF using pdfplumber."""
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
@@ -264,7 +370,6 @@ def extract_all_pages(pdf_path: str, verbose: bool = False) -> List[Tuple[int, s
                 page_num = i + 1
                 text = page.extract_text() or ""
 
-                # Feature #45: table-aware extraction
                 tables = page.extract_tables()
                 if tables:
                     table_md = _tables_to_markdown(tables)
@@ -285,7 +390,6 @@ def extract_all_pages(pdf_path: str, verbose: bool = False) -> List[Tuple[int, s
             raise RuntimeError(f"PDF is encrypted: {pdf_path}") from e
         raise RuntimeError(f"Cannot open PDF: {pdf_path}: {e}") from e
 
-    # Feature #44: PyMuPDF fallback if >30% pages are garbled
     if total > 0 and garbled_count / total > 0.30:
         if verbose:
             print(f"Garbled text detected ({garbled_count}/{total} pages), trying PyMuPDF...")
@@ -297,10 +401,7 @@ def extract_all_pages(pdf_path: str, verbose: bool = False) -> List[Tuple[int, s
 
 
 def fallback_extract_pymupdf(pdf_path: str, verbose: bool = False) -> Optional[List[Tuple[int, str]]]:
-    """Fallback extraction using PyMuPDF (fitz).
-
-    Returns None if PyMuPDF is not installed.
-    """
+    """Fallback extraction using PyMuPDF (fitz)."""
     try:
         import fitz
     except ImportError:
@@ -328,31 +429,37 @@ def fallback_extract_pymupdf(pdf_path: str, verbose: bool = False) -> Optional[L
 
 
 # ---------------------------------------------------------------------------
-# Zone detection for A-share annual report structure
+# Zone detection for annual report structure
 # ---------------------------------------------------------------------------
 
-def detect_zones(pages_text: List[Tuple[int, str]]) -> Dict[int, str]:
+def detect_zones(
+    pages_text: List[Tuple[int, str]],
+    market_type: str = "CN",
+) -> Dict[int, str]:
     """Detect report structure zones by scanning for section markers.
 
+    Args:
+        pages_text: List of (page_number, text) tuples.
+        market_type: 'CN' for A-share (CSRC format) or 'HK' for HKFRS format.
+
     Returns:
-        Dict mapping page_number -> zone_name. Pages without a detected
-        zone inherit from the most recent zone marker before them.
-        Returns empty dict if no zone markers are found.
+        Dict mapping page_number -> zone_name.
     """
+    markers = ZONE_MARKERS_HK if market_type == "HK" else ZONE_MARKERS
+
     zone_transitions: List[Tuple[int, str]] = []
 
     for page_num, text in pages_text:
         if not text:
             continue
-        for pattern, zone_name in ZONE_MARKERS:
+        for pattern, zone_name in markers:
             if re.search(pattern, text):
                 zone_transitions.append((page_num, zone_name))
-                break  # first matching marker per page
+                break
 
     if not zone_transitions:
         return {}
 
-    # Build page->zone mapping (each page inherits from last marker)
     zone_transitions.sort(key=lambda x: x[0])
     page_zones: Dict[int, str] = {}
     current_zone = None
@@ -376,6 +483,7 @@ def detect_zones(pages_text: List[Tuple[int, str]]) -> Dict[int, str]:
 def _score_match(
     page_num: int, total_pages: int, text: str, keyword: str,
     zone: Optional[str] = None, section_id: Optional[str] = None,
+    market_type: str = "CN",
 ) -> float:
     """Score a keyword match: prefer correct report zone over TOC.
 
@@ -384,60 +492,89 @@ def _score_match(
         +2.0 if page is in a preferred zone for this section
         -2.0 if page is in an avoided zone for this section
         +0.5 fallback position bonus if no zone info available
-        -0.5 if page looks like TOC (contains "目录" or "目 录")
-        +0.3 if keyword appears in a heading-like context (numbered section)
-        -0.3 if keyword only appears as a cross-reference ("详见")
+        -0.5 if page looks like TOC
+        +0.3 if keyword appears in a heading-like context
+        -0.3 if keyword only appears as a cross-reference
     """
     score = 1.0
 
-    # Zone-aware scoring (replaces position bonus when zone info available)
-    if zone and section_id and section_id in SECTION_ZONE_PREFERENCES:
-        prefs = SECTION_ZONE_PREFERENCES[section_id]
+    # Select zone preferences based on market
+    zone_prefs = SECTION_ZONE_PREFERENCES_HK if market_type == "HK" else SECTION_ZONE_PREFERENCES
+
+    # Zone-aware scoring
+    if zone and section_id and section_id in zone_prefs:
+        prefs = zone_prefs[section_id]
         if zone in prefs.get("prefer", []):
             score += 2.0
         elif zone in prefs.get("avoid", []):
             score -= 2.0
     elif total_pages > 0:
-        # Fallback: position-based scoring when no zone info
         if page_num / total_pages > 0.30:
             score += 0.5
 
-    # Penalize TOC pages
-    if "目录" in text or "目 录" in text:
+    # Penalize TOC pages (both Simplified and Traditional)
+    if any(toc in text for toc in ["目录", "目 录", "目錄", "目 錄"]):
         score -= 0.5
 
-    # Penalize cross-references ("详见注释七'31、所有权或使用权受限资产'")
+    # Penalize cross-references
     kw_pos = text.find(keyword)
     if kw_pos > 0:
         before = text[max(0, kw_pos - 30):kw_pos]
-        if "详见" in before or "参见" in before or "参照" in before:
+        xrefs = ["详见", "参见", "参照", "詳見", "參見", "參照", "載於"]
+        if any(ref in before for ref in xrefs):
             score -= 0.3
 
-    # SUB context scoring: penalize accounting detail, reward subsidiary operating data
+    # SUB context scoring
     if section_id == "SUB" and kw_pos >= 0:
         context_window = text[max(0, kw_pos - 200):min(len(text), kw_pos + 200)]
-        # Penalize: accounting detail context
-        acct = ["权益法", "账面余额", "减值准备", "成本法", "账面价值"]
-        if sum(1 for a in acct if a in context_window) >= 2:
-            score -= 1.5
-        # Reward: subsidiary operating data context
-        subs = ["主营业务", "营业收入", "净利润", "注册资本", "持股比例"]
-        if sum(1 for s in subs if s in context_window) >= 2:
-            score += 1.0
+        if market_type == "HK":
+            acct_hk = ["會計政策", "確認及計量", "減值", "公允價值", "合併"]
+            if sum(1 for a in acct_hk if a in context_window) >= 2:
+                score -= 1.5
+            subs_hk = ["主要業務", "註冊地", "持股比例", "股本", "附屬公司名稱"]
+            if sum(1 for s in subs_hk if s in context_window) >= 2:
+                score += 1.0
+        else:
+            acct = ["权益法", "账面余额", "减值准备", "成本法", "账面价值"]
+            if sum(1 for a in acct if a in context_window) >= 2:
+                score -= 1.5
+            subs = ["主营业务", "营业收入", "净利润", "注册资本", "持股比例"]
+            if sum(1 for s in subs if s in context_window) >= 2:
+                score += 1.0
 
-    # P3 context scoring: penalize non-AR aging (prepayments, other payables)
+    # P3 context scoring: penalize non-AR aging
     if section_id == "P3" and kw_pos >= 0:
         context_window = text[max(0, kw_pos - 200):min(len(text), kw_pos + 200)]
-        non_ar = ["预付款项", "预付账款", "预付", "应付账款", "应付票据", "其他应付"]
-        if any(term in context_window for term in non_ar):
-            score -= 2.0
+        if market_type == "HK":
+            non_ar_hk = ["預付款項", "預付賬款", "應付賬款", "應付票據", "其他應付"]
+            if any(term in context_window for term in non_ar_hk):
+                score -= 2.0
+        else:
+            non_ar = ["预付款项", "预付账款", "预付", "应付账款", "应付票据", "其他应付"]
+            if any(term in context_window for term in non_ar):
+                score -= 2.0
+
+    # P6 context scoring for HK: reward actual figures, penalize policy
+    if section_id == "P6" and market_type == "HK" and kw_pos >= 0:
+        context_window = text[max(0, kw_pos - 200):min(len(text), kw_pos + 200)]
+        fig_indicators = ["千港元", "百萬", "人民幣", "港元"]
+        if any(ind in context_window for ind in fig_indicators):
+            score += 0.5
+        policy_indicators = ["會計政策", "確認及計量", "準則規定"]
+        if sum(1 for p in policy_indicators if p in context_window) >= 2:
+            score -= 1.0
 
     # Bonus: keyword appears near a numbered heading pattern
-    # e.g., "31、所有权或使用权受限资产" or "十四、关联方及关联交易"
-    heading_patterns = [
-        r"\d+[、.．]\s*" + re.escape(keyword),
-        r"[一二三四五六七八九十]+[、.．]\s*" + re.escape(keyword),
-    ]
+    if market_type == "HK":
+        heading_patterns = [
+            r"\d+[.．、]\s*" + re.escape(keyword),
+            r"[（(]\s*[a-zA-Z0-9]+\s*[)）]\s*" + re.escape(keyword),
+        ]
+    else:
+        heading_patterns = [
+            r"\d+[、.．]\s*" + re.escape(keyword),
+            r"[一二三四五六七八九十]+[、.．]\s*" + re.escape(keyword),
+        ]
     for pat in heading_patterns:
         if re.search(pat, text):
             score += 0.3
@@ -449,27 +586,27 @@ def _score_match(
 def find_section_pages(
     pages_text: List[Tuple[int, str]],
     section_keywords: Dict[str, List[str]] = None,
+    market_type: str = "CN",
 ) -> Dict[str, List[int]]:
     """Locate sections by scanning all pages for keywords.
 
     Args:
         pages_text: List of (page_number, text) tuples.
-        section_keywords: Keyword dict (default: SECTION_KEYWORDS).
+        section_keywords: Keyword dict (default: auto-selected by market_type).
+        market_type: 'CN' or 'HK'.
 
     Returns:
-        Dict mapping section_id -> [page_numbers] sorted by priority score (best first).
+        Dict mapping section_id -> [page_numbers] sorted by priority score.
     """
     if section_keywords is None:
-        section_keywords = SECTION_KEYWORDS
+        section_keywords = SECTION_KEYWORDS_HK if market_type == "HK" else SECTION_KEYWORDS
 
     total_pages = len(pages_text)
     results: Dict[str, List[int]] = {}
 
-    # Detect zones for scoring
-    page_zones = detect_zones(pages_text)
+    page_zones = detect_zones(pages_text, market_type=market_type)
 
     for section_id, keywords in section_keywords.items():
-        # Collect (score, page_num) for all matches
         scored_matches: List[Tuple[float, int]] = []
 
         for page_num, text in pages_text:
@@ -479,14 +616,13 @@ def find_section_pages(
                 if kw in text:
                     zone = page_zones.get(page_num)
                     score = _score_match(page_num, total_pages, text, kw,
-                                         zone=zone, section_id=section_id)
+                                         zone=zone, section_id=section_id,
+                                         market_type=market_type)
                     scored_matches.append((score, page_num))
-                    break  # one keyword per page is enough
+                    break
 
-        # Sort by score descending, then by page number ascending as tiebreak
         scored_matches.sort(key=lambda x: (-x[0], x[1]))
 
-        # Deduplicate page numbers while preserving order
         seen = set()
         ordered_pages = []
         for _, pn in scored_matches:
@@ -510,27 +646,11 @@ def extract_section_context(
     buffer_pages: int = 1,
     max_chars: int = 4000,
 ) -> Dict[str, Optional[str]]:
-    """Extract context text for each section using best-match page +/- buffer.
-
-    Centers the extraction around the first keyword match position on the
-    target page to maximize relevance.
-
-    Args:
-        pages_text: List of (page_number, text) tuples.
-        section_pages: Output from find_section_pages.
-        section_keywords: Keywords dict for locating match position.
-        buffer_pages: Number of pages before/after to include.
-        max_chars: Maximum characters per section.
-
-    Returns:
-        Dict mapping section_id -> extracted text or None if not found.
-    """
+    """Extract context text for each section using best-match page +/- buffer."""
     if section_keywords is None:
         section_keywords = SECTION_KEYWORDS
 
-    # Build a lookup: page_num -> text
     page_lookup: Dict[int, str] = {pn: text for pn, text in pages_text}
-
     contexts: Dict[str, Optional[str]] = {}
 
     for section_id, matched_pages in section_pages.items():
@@ -538,15 +658,12 @@ def extract_section_context(
             contexts[section_id] = None
             continue
 
-        # Per-section config overrides function defaults
         cfg = SECTION_EXTRACT_CONFIG.get(section_id, {})
         sect_buffer = cfg.get("buffer_pages", buffer_pages)
         sect_max = cfg.get("max_chars", max_chars)
 
-        # Use the best-scored page (first in list)
         best_page = matched_pages[0]
 
-        # Collect text from (best - buffer) to (best + buffer)
         parts = []
         for offset in range(-sect_buffer, sect_buffer + 1):
             target = best_page + offset
@@ -557,7 +674,6 @@ def extract_section_context(
 
         combined = "\n\n".join(parts)
 
-        # If too long, try to center around the keyword match
         if len(combined) > sect_max:
             keywords = section_keywords.get(section_id, [])
             combined = _center_truncate(combined, keywords, sect_max)
@@ -569,7 +685,6 @@ def extract_section_context(
 
 def _center_truncate(text: str, keywords: list, max_chars: int) -> str:
     """Truncate text centered around the first keyword match."""
-    # Find the first keyword position
     match_pos = len(text)
     for kw in keywords:
         pos = text.find(kw)
@@ -577,18 +692,15 @@ def _center_truncate(text: str, keywords: list, max_chars: int) -> str:
             match_pos = pos
 
     if match_pos == len(text):
-        # No keyword found, fall back to simple truncation
         return _truncate_at_boundary(text, max_chars)
 
-    # Center the window around the match
     half = max_chars // 2
-    start = max(0, match_pos - half // 2)  # More text after match than before
+    start = max(0, match_pos - half // 2)
     end = min(len(text), start + max_chars)
     start = max(0, end - max_chars)
 
     result = text[start:end]
 
-    # Clean up: try to start at a page boundary or line boundary
     if start > 0:
         newline_pos = result.find("\n")
         if newline_pos >= 0 and newline_pos < 200:
@@ -604,13 +716,38 @@ def _truncate_at_boundary(text: str, max_chars: int) -> str:
 
     truncated = text[:max_chars]
 
-    # Try to find last Chinese period, question mark, or newline
-    for sep in ["。", "\n", "；", ".", "!", "！"]:
+    for sep in ["\u3002", "\n", "\uff1b", ".", "!", "\uff01"]:
         last_pos = truncated.rfind(sep)
-        if last_pos > max_chars * 0.5:  # Don't cut too aggressively
+        if last_pos > max_chars * 0.5:
             return truncated[:last_pos + 1]
 
     return truncated
+
+
+# ---------------------------------------------------------------------------
+# Market type auto-detection
+# ---------------------------------------------------------------------------
+
+def detect_market_type(stock_code: str = "", pdf_path: str = "") -> str:
+    """Auto-detect market type from stock code or PDF filename.
+
+    Returns 'HK' for Hong Kong stocks, 'CN' for A-share (default).
+    """
+    code = stock_code.upper()
+    if ".HK" in code or code.startswith("HK"):
+        return "HK"
+
+    basename = os.path.basename(pdf_path).upper()
+    if ".HK" in basename:
+        return "HK"
+
+    # 5-digit codes starting with 0 and < 10000 are likely HK
+    digits = re.findall(r"(\d{5})", basename)
+    for d in digits:
+        if d.startswith("0") and int(d) < 10000:
+            return "HK"
+
+    return "CN"
 
 
 # ---------------------------------------------------------------------------
@@ -622,11 +759,9 @@ def write_output(
     pdf_path: str,
     total_pages: int,
     output_path: str,
+    market_type: str = "CN",
 ) -> dict:
-    """Write pdf_sections.json with 7 sections + metadata.
-
-    Returns the output dict for inspection.
-    """
+    """Write pdf_sections.json with 7 sections + metadata."""
     found_count = sum(1 for v in contexts.values() if v is not None)
 
     output = {
@@ -636,13 +771,13 @@ def write_output(
             "extract_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "sections_found": found_count,
             "sections_total": len(contexts),
+            "market_type": market_type,
         },
     }
 
     for section_id in ["P2", "P3", "P4", "P6", "P13", "MDA", "SUB"]:
         output[section_id] = contexts.get(section_id)
 
-    # Ensure output directory exists
     out_dir = os.path.dirname(output_path)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
@@ -661,10 +796,11 @@ def parse_args(args=None):
     parser = argparse.ArgumentParser(
         description="Extract target sections from annual report PDFs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog="""\
 Examples:
-  %(prog)s --pdf 伊利股份_2024_年报.pdf
+  %(prog)s --pdf report.pdf
   %(prog)s --pdf report.pdf --output output/pdf_sections.json --verbose
+  %(prog)s --pdf 06049_2024_年报.pdf --market HK --verbose
         """,
     )
     parser.add_argument(
@@ -683,6 +819,12 @@ Examples:
         help="Path to toc_hints.json (optional, from Phase 2A.5 TOC analysis)",
     )
     parser.add_argument(
+        "--market",
+        default=None,
+        choices=["CN", "HK", "auto"],
+        help="Market type: CN (A-share), HK (Hong Kong), auto (auto-detect). Default: auto",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print progress messages during extraction",
@@ -696,14 +838,7 @@ Examples:
 
 
 def _load_hints(hints_path: Optional[str]) -> Dict[str, dict]:
-    """Load TOC hints from JSON file.
-
-    Args:
-        hints_path: Path to toc_hints.json or None.
-
-    Returns:
-        Dict mapping section_id -> {"page": int, "title": str} or empty dict.
-    """
+    """Load TOC hints from JSON file."""
     if not hints_path or not os.path.exists(hints_path):
         return {}
     try:
@@ -714,32 +849,41 @@ def _load_hints(hints_path: Optional[str]) -> Dict[str, dict]:
         return {}
 
 
-def run_pipeline(pdf_path: str, output_path: str, verbose: bool = False,
-                 hints_path: Optional[str] = None) -> dict:
+def run_pipeline(
+    pdf_path: str,
+    output_path: str,
+    verbose: bool = False,
+    hints_path: Optional[str] = None,
+    market_type: Optional[str] = None,
+) -> dict:
     """Run the full extraction pipeline.
 
     Args:
         pdf_path: Path to the PDF.
         output_path: Path for JSON output.
         verbose: Print progress.
-        hints_path: Optional path to toc_hints.json for TOC-based page overrides.
+        hints_path: Optional path to toc_hints.json.
+        market_type: 'CN', 'HK', or None for auto-detection.
 
     Returns:
         The output dict written to JSON.
-
-    Raises:
-        FileNotFoundError: If PDF not found.
-        RuntimeError: If PDF cannot be opened or is too small.
     """
     try:
         from scripts.config import validate_pdf
     except ModuleNotFoundError:
         from config import validate_pdf
 
-    # Validate PDF
     is_valid, reason = validate_pdf(pdf_path)
     if not is_valid:
         raise RuntimeError(f"Invalid PDF: {reason}")
+
+    # Auto-detect market type if not specified
+    if market_type is None or market_type == "auto":
+        market_type = detect_market_type(pdf_path=pdf_path)
+        if verbose:
+            print(f"  Auto-detected market type: {market_type}")
+
+    kw_dict = SECTION_KEYWORDS_HK if market_type == "HK" else SECTION_KEYWORDS
 
     # Step 1: Extract all pages
     print(f"[1/4] Extracting pages from {pdf_path}...")
@@ -749,7 +893,7 @@ def run_pipeline(pdf_path: str, output_path: str, verbose: bool = False,
     if total_pages == 0:
         raise RuntimeError("PDF has no extractable pages")
 
-    print(f"  Extracted {total_pages} pages")
+    print(f"  Extracted {total_pages} pages (market={market_type})")
 
     # Load TOC hints (Phase 2A.5)
     hints = _load_hints(hints_path)
@@ -758,16 +902,17 @@ def run_pipeline(pdf_path: str, output_path: str, verbose: bool = False,
 
     # Step 2: Find section pages via keyword matching
     print("[2/4] Scanning for target sections...")
-    section_pages = find_section_pages(pages_text)
+    section_pages = find_section_pages(
+        pages_text, section_keywords=kw_dict, market_type=market_type,
+    )
 
-    # Apply hints: override keyword-matched pages with TOC hint pages
     for sid, hint in hints.items():
         if sid in section_pages and "page" in hint:
             hint_page = hint["page"]
             if 1 <= hint_page <= total_pages:
                 section_pages[sid] = [hint_page]
                 if verbose:
-                    print(f"  {sid}: overridden by hint → page {hint_page}")
+                    print(f"  {sid}: overridden by hint -> page {hint_page}")
 
     if verbose:
         for sid, pages in section_pages.items():
@@ -778,11 +923,13 @@ def run_pipeline(pdf_path: str, output_path: str, verbose: bool = False,
 
     # Step 3: Extract context around best matches
     print("[3/4] Extracting section context...")
-    contexts = extract_section_context(pages_text, section_pages)
+    contexts = extract_section_context(pages_text, section_pages,
+                                       section_keywords=kw_dict)
 
     # Step 4: Write output
     print(f"[4/4] Writing output to {output_path}...")
-    result = write_output(contexts, pdf_path, total_pages, output_path)
+    result = write_output(contexts, pdf_path, total_pages, output_path,
+                          market_type=market_type)
 
     found = result["metadata"]["sections_found"]
     total = result["metadata"]["sections_total"]
@@ -798,16 +945,24 @@ def main():
         print("=== Dry Run ===")
         print(f"  PDF: {args.pdf}")
         print(f"  Output: {args.output}")
+        print(f"  Market: {args.market}")
         print(f"  Hints: {args.hints}")
         print(f"  Verbose: {args.verbose}")
         return
 
+    market = args.market
+    if market is None:
+        market = "auto"
+
     try:
-        result = run_pipeline(args.pdf, args.output, verbose=args.verbose,
-                              hints_path=args.hints)
+        result = run_pipeline(
+            args.pdf, args.output, verbose=args.verbose,
+            hints_path=args.hints, market_type=market,
+        )
         found = result["metadata"]["sections_found"]
         total = result["metadata"]["sections_total"]
-        print(f"Extracted {found}/{total} sections -> {args.output}")
+        mkt = result["metadata"]["market_type"]
+        print(f"Extracted {found}/{total} sections (market={mkt}) -> {args.output}")
     except (FileNotFoundError, RuntimeError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
