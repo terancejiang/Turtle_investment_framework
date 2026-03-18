@@ -111,3 +111,62 @@ python3 scripts/download_report.py \
 - `output/<code>_<company>/<code>_<year>_<report_type>.pdf`
 
 其中 `<code>` 会去掉 `SH`/`SZ`/`HK` 前缀，`<company>` 来自 `--company-name`（可选）。
+
+## 06049 保利物业中报下载问题与解决方案沉淀
+
+### 背景
+
+目标：从雪球公告获取“2025中期报告”PDF，并落地到本地用于财报解析。
+
+### 遇到的问题
+
+1) Playwright 拦截不到 stock_timeline.json  
+现象：脚本输出 `No API response intercepted during page load`，仅从页面 HTML 拿到少量 PDF。  
+原因：雪球页面出现登录/验证码门槛时，前端不会触发 `stock_timeline.json` 请求。
+
+2) 直接 curl timeline 接口返回 400  
+现象：返回 `遇到错误，请刷新页面或者重新登录帐号后再试`。  
+原因：缺少有效登录态 Cookie 或 md5__1038 签名失效。
+
+### 解决办法
+
+#### 方案 A（推荐）：复用本机浏览器登录态
+
+用 Chrome 个人资料目录启动 Playwright，避免手动粘贴 Cookie。
+
+```bash
+.venv/bin/python scripts/xueqiu_playwright_crawler.py \
+  --symbol 06049 \
+  --user-data-dir "/Users/chenwei/Library/Application Support/Google/Chrome" \
+  --max-pages 30 \
+  --timeout 30 \
+  --output output/06049_保利物业/xueqiu_profile_try.json
+```
+
+结果：成功拦截 timeline，候选列表里出现 2025 中期报告 PDF。
+
+中报 PDF 链接：  
+https://stockn.xueqiu.com/06049/20250925504864.pdf
+
+本地落地文件：  
+output/06049_保利物业/06049_2025_中报.pdf
+
+#### 方案 B：使用 cookie 文件（避免把 token 写进命令行）
+
+1) 把 Cookie 字符串保存为本地文件（不进 git），如 `~/.xq_cookie.txt`  
+2) 运行：
+
+```bash
+.venv/bin/python scripts/xueqiu_playwright_crawler.py \
+  --symbol 06049 \
+  --cookie-file ~/.xq_cookie.txt \
+  --max-pages 30 \
+  --timeout 30 \
+  --output output/06049_保利物业/xueqiu_profile_try.json
+```
+
+### 经验要点
+
+- 没有登录态就抓不到公告 timeline，拦截一定为 0
+- 中报 PDF 可以直接下载，无需二次签名：只要从 timeline 的候选中解析出 PDF 链接即可
+- 避免泄露 Cookie/Token：不要把完整 token 写进项目文件或 shell 历史

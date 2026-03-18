@@ -91,6 +91,10 @@ def parse_args(argv=None):
         help="Cookie string from browser (optional, for logged-in state)",
     )
     parser.add_argument(
+        "--cookie-file",
+        help="Read cookie string from a local file (recommended to avoid exposing tokens in shell history)",
+    )
+    parser.add_argument(
         "--timeline-url",
         help="Signed stock_timeline.json url copied from browser (optional)",
     )
@@ -101,6 +105,10 @@ def parse_args(argv=None):
     parser.add_argument(
         "--headed", action="store_true",
         help="Run browser in headed mode (visible, for debugging)",
+    )
+    parser.add_argument(
+        "--pause-seconds", type=int, default=0,
+        help="If login/captcha detected, pause to allow manual verification (default: 0)",
     )
     parser.add_argument(
         "--output",
@@ -333,22 +341,38 @@ def crawl_with_playwright(symbol, args):
             return
         try:
             if response.status == 200:
-                body = response.json()
                 timeline_response_count += 1
                 last_intercept_time[0] = time.time()
-                found = find_pdf_links_in_object(body)
-                pdf_urls.update(found)
+                body = None
+                try:
+                    body = response.json()
+                except Exception:
+                    try:
+                        text = response.text() or ""
+                        if text.lstrip().startswith("{") or text.lstrip().startswith("["):
+                            body = json.loads(text)
+                    except Exception:
+                        body = None
+
+                found = set()
                 items = []
-                if isinstance(body, dict):
-                    items = body.get("list") or []
-                pdf_candidates.extend(extract_candidates_from_items(items))
-                item_count = len(items) if isinstance(items, list) else 0
-                api_responses.append({
-                    "page": timeline_response_count,
-                    "status": response.status,
-                    "pdf_count": len(found),
-                    "items": item_count,
-                })
+                item_count = 0
+                if body is not None:
+                    found = find_pdf_links_in_object(body)
+                    pdf_urls.update(found)
+                    if isinstance(body, dict):
+                        items = body.get("list") or []
+                    pdf_candidates.extend(extract_candidates_from_items(items))
+                    item_count = len(items) if isinstance(items, list) else 0
+
+                api_responses.append(
+                    {
+                        "page": timeline_response_count,
+                        "status": response.status,
+                        "pdf_count": len(found),
+                        "items": item_count,
+                    }
+                )
                 print(
                     "  [intercept] #{}: {} items, {} PDFs (total: {})".format(
                         timeline_response_count, item_count,
@@ -402,9 +426,17 @@ def crawl_with_playwright(symbol, args):
             )
             pg = context.new_page()
 
+        cookie_string = args.cookie
+        if (not cookie_string) and args.cookie_file:
+            try:
+                with open(os.path.expanduser(args.cookie_file), "r", encoding="utf-8") as f:
+                    cookie_string = f.read().strip()
+            except Exception:
+                cookie_string = ""
+
         # Inject cookies
-        if args.cookie:
-            cks = parse_cookie_string(args.cookie)
+        if cookie_string:
+            cks = parse_cookie_string(cookie_string)
             if cks:
                 context.add_cookies(cks)
                 print("  Injected {} cookies".format(len(cks)), file=sys.stderr)
@@ -428,6 +460,29 @@ def crawl_with_playwright(symbol, args):
             )
         except Exception as e:
             print("Page load error: {}".format(e), file=sys.stderr)
+
+        try:
+            html = pg.content() or ""
+            lower = html.lower()
+            has_login = ("登录" in html) or ("login" in lower)
+            has_captcha = ("验证码" in html) or ("captcha" in lower) or ("安全验证" in html)
+        except Exception:
+            has_login = False
+            has_captcha = False
+
+        if args.pause_seconds and (has_login or has_captcha):
+            print(
+                "  Detected login/captcha gate. If running headed, please complete verification now.",
+                file=sys.stderr,
+            )
+            print(
+                "  Pausing up to {}s...".format(args.pause_seconds),
+                file=sys.stderr,
+            )
+            for _ in range(int(args.pause_seconds)):
+                if timeline_response_count > 0:
+                    break
+                time.sleep(1)
 
         # Wait for initial API call to be intercepted
         print("Waiting for page JS to fire initial API call...", file=sys.stderr)
@@ -461,7 +516,6 @@ def crawl_with_playwright(symbol, args):
         # fresh signatures for each subsequent request automatically.
         consecutive_no_new = 0
         for page_num in range(2, args.max_pages + 1):
-            prev_count = len(pdf_urls)
             prev_intercepts = timeline_response_count
             triggered = False
 
@@ -502,11 +556,11 @@ def crawl_with_playwright(symbol, args):
                 time.sleep(0.3)
 
             # Check progress
-            if len(pdf_urls) == prev_count:
+            if timeline_response_count == prev_intercepts:
                 consecutive_no_new += 1
                 if consecutive_no_new >= MAX_CONSECUTIVE_NO_NEW:
                     print(
-                        "  No new PDFs for {} consecutive pages, stopping.".format(
+                        "  No new API responses for {} consecutive pages, stopping.".format(
                             consecutive_no_new
                         ),
                         file=sys.stderr,
